@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open_Irr System Dashboard</title>
+    <!-- Include Chart.js library for plotting -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <!-- Styling based on your provided template -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <!-- You can replace this src with your actual logo path -->
+            <img src="usda_ars_logo.jpg" alt="Logo" class="header-logo">
+            <h1>Open_Irr System Dashboard</h1>
+        </div>
+
+        <!-- Section: Status Table Area -->
+        <fieldset>
+            <legend>Irrigation Group Status</legend>
+            <table class="status-table">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Valve State</th>
+                        <th>Last Irrigation</th>
+                        <th>Recent Mean (VWC)</th>
+                        <th>Recent Std Dev</th>
+                        <th>Water Manager</th>
+                        <th>Irrigation Method</th>
+                    </tr>
+                </thead>
+                <tbody id="statusTableBody">
+                    <!-- Data will be dynamically inserted here by JavaScript -->
+                </tbody>
+            </table>
+        </fieldset>
+
+        <!-- Section: Plot Area -->
+        <fieldset>
+            <legend>Sensor Data Over Time</legend>
+            <div class="plot-container">
+                <div class="chart-area">
+                    <canvas id="sensorDataChart"></canvas>
+                </div>
+                <div class="chart-controls">
+                    <h4>Display Options</h4>
+                    <label><input type="checkbox" id="toggleGroup1" data-group-index="0" checked> Group 1 Mean</label>
+                    <label><input type="checkbox" id="toggleGroup2" data-group-index="1" checked> Group 2 Mean</label>
+                    <label><input type="checkbox" id="toggleGroup3" data-group-index="2" checked> Group 3 Mean</label>
+                    <label><input type="checkbox" id="toggleGroup4" data-group-index="3" checked> Group 4 Mean</label>
+                    <div class="control-divider"></div>
+                    <label><input type="checkbox" id="toggleSensors"> Show Individual Sensors</label>
+                </div>
+            </div>
+        </fieldset>
+            <!-- Navigation Buttons -->
+        <nav>
+            <a href="index.html" class="button">Home</a>
+            <a href="dashboard.html" class="button">Dashboard</a>
+            <a href="options.html" class="button">System Programming</a>
+            <a href="filesAccess.html" class="button">File Access</a>
+        </nav>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- FRAMEWORK: This is where you would fetch initial data ---
+            // For now, we generate synthetic data to build the dashboard
+            let liveData = generateInitialSyntheticData();
+
+            // Initialize dashboard components
+            updateStatusTable(liveData.status);
+            const myChart = initializeChart(liveData.timeSeries);
+            setupChartControls(myChart);
+
+            // --- FRAMEWORK: Simulate real-time data updates ---
+            // In a real application, you might use WebSockets or repeated fetch calls.
+            // This setInterval simulates receiving new data every 5 seconds.
+            setInterval(() => {
+                // This is where you would call your function to get the latest data point
+                // e.g., fetch('/api/latest-data').then(res => res.json()).then(newDataPoint => { ... });
+                
+                // For demonstration, we just generate a new synthetic point
+                const newDataPoint = generateNewDataPoint(liveData.timeSeries.labels.slice(-1)[0]);
+                
+                // Update the live data object
+                liveData.timeSeries.labels.push(newDataPoint.label);
+                liveData.timeSeries.datasets.forEach((dataset, index) => {
+                    dataset.data.push(newDataPoint.values[index]);
+                });
+
+                // Update the status table with potentially new status info
+                updateStatusTable(generateSyntheticStatusData()); // Regenerate for demo purposes
+
+                // Update the chart
+                myChart.update();
+
+            }, 5000); // Update every 5 seconds
+        });
+
+        /**
+         * Generates synthetic status data for the main table.
+         * @returns {Array} An array of status objects for each group.
+         */
+        function generateSyntheticStatusData() {
+            const methods = ['Threshold Water', 'Scheduled', 'Maximum Depletion', 'Threshold Maintenance'];
+            const statuses = [];
+            for (let i = 1; i <= 4; i++) {
+                const lastEnd = new Date(Date.now() - Math.random() * 4 * 3600 * 1000); // Within last 4 hours
+                const lastStart = new Date(lastEnd.getTime() - 30 * 60 * 1000); // 30 min duration
+                statuses.push({
+                    group: `Group ${i}`,
+                    valveState: Math.random() > 0.8 ? 'Open' : 'Closed',
+                    lastIrrigation: `${lastStart.toLocaleTimeString()} - ${lastEnd.toLocaleTimeString()}`,
+                    meanVWC: (25 + Math.random() * 10).toFixed(2),
+                    stdDev: (0.5 + Math.random() * 2).toFixed(2),
+                    waterManager: Math.random() > 0.5 ? 'ON' : 'OFF',
+                    irrigationMethod: methods[i - 1],
+                });
+            }
+            return statuses;
+        }
+
+        /**
+         * Updates the status table with the latest data.
+         * @param {Array} statusData - Array of status objects.
+         */
+        function updateStatusTable(statusData) {
+            const tableBody = document.getElementById('statusTableBody');
+            tableBody.innerHTML = ''; // Clear existing rows
+            statusData.forEach(data => {
+                const row = `
+                    <tr>
+                        <td>${data.group}</td>
+                        <td class="status-${data.valveState.toLowerCase()}">${data.valveState}</td>
+                        <td>${data.lastIrrigation}</td>
+                        <td>${data.meanVWC} %</td>
+                        <td>${data.stdDev}</td>
+                        <td class="status-${data.waterManager.toLowerCase()}">${data.waterManager}</td>
+                        <td>${data.irrigationMethod}</td>
+                    </tr>
+                `;
+                tableBody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+        
+        /**
+         * Generates a full set of initial synthetic data for the chart.
+         * @returns {Object} An object containing labels and datasets.
+         */
+        function generateInitialSyntheticData() {
+            const labels = [];
+            const datasets = Array.from({ length: 20 }, () => ({ data: [] })); // 4 group means + 16 sensors
+            let currentTime = new Date(Date.now() - 60 * 60 * 1000); // Start 1 hour ago
+
+            for (let i = 0; i < 60; i++) { // 60 data points
+                const dataPoint = generateNewDataPoint(currentTime);
+                labels.push(dataPoint.label);
+                datasets.forEach((ds, index) => {
+                    ds.data.push(dataPoint.values[index]);
+                });
+                currentTime = new Date(currentTime.getTime() + 60 * 1000); // Increment by 1 minute
+            }
+
+            return {
+                status: generateSyntheticStatusData(),
+                timeSeries: { labels, datasets }
+            };
+        }
+
+        /**
+         * Generates a single new data point for all sensors and groups.
+         * @param {Date} previousTime - The timestamp of the last data point.
+         * @returns {Object} An object with the new label (time) and an array of values.
+         */
+        function generateNewDataPoint(previousTime) {
+            const newTime = new Date(new Date(previousTime).getTime() + 60 * 1000);
+            const values = [];
+            
+            // Generate 16 individual sensor values
+            for (let i = 0; i < 16; i++) {
+                const value = 28 + Math.sin(i + Date.now() / 100000) * 5 + (Math.random() - 0.5) * 2;
+                values.push(value);
+            }
+
+            // Calculate 4 group means based on sensor values
+            const groupMeans = [
+                values.slice(0, 4).reduce((a, b) => a + b, 0) / 4,
+                values.slice(4, 8).reduce((a, b) => a + b, 0) / 4,
+                values.slice(8, 12).reduce((a, b) => a + b, 0) / 4,
+                values.slice(12, 16).reduce((a, b) => a + b, 0) / 4,
+            ];
+
+            // The final array of values is group means first, then individual sensors
+            const allValues = [...groupMeans, ...values];
+
+            return { label: newTime, values: allValues };
+        }
+
+        /**
+         * Initializes the line chart.
+         * @param {Object} timeSeriesData - The data object for the chart.
+         * @returns {Chart} The Chart.js instance.
+         */
+        function initializeChart(timeSeriesData) {
+            const ctx = document.getElementById('sensorDataChart').getContext('2d');
+            
+            const groupColors = ['#005a9c', '#2e8540', '#d9534f', '#6c757d'];
+            const sensorColors = Array.from({length: 16}, (_, i) => `hsla(${i * 22.5}, 70%, 60%, 0.5)`);
+
+            const chartDatasets = [
+                // Group Means (first 4 datasets)
+                ...Array.from({ length: 4 }, (_, i) => ({
+                    label: `Group ${i + 1} Mean`,
+                    data: timeSeriesData.datasets[i].data,
+                    borderColor: groupColors[i],
+                    backgroundColor: groupColors[i],
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    tension: 0.1,
+                    hidden: false // Initially visible
+                })),
+                // Individual Sensors (next 16 datasets)
+                ...Array.from({ length: 16 }, (_, i) => ({
+                    label: `Sensor ${i + 1}`,
+                    data: timeSeriesData.datasets[i + 4].data,
+                    borderColor: sensorColors[i],
+                    backgroundColor: sensorColors[i],
+                    borderWidth: 1,
+                    borderDash: [5, 5],
+                    pointRadius: 0,
+                    hidden: true // Initially hidden
+                }))
+            ];
+
+            const chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: timeSeriesData.labels,
+                    datasets: chartDatasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'minute',
+                                tooltipFormat: 'PP pp',
+                                displayFormats: {
+                                    minute: 'h:mm a'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Volumetric Water Content (VWC %)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false // We use custom controls
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    animation: {
+                        duration: 250 // Smoother updates
+                    }
+                }
+            });
+
+            return chart;
+        }
+
+        /**
+         * Sets up the event listeners for the chart control checkboxes.
+         * @param {Chart} chart - The Chart.js instance to control.
+         */
+        function setupChartControls(chart) {
+            // Group Toggles
+            document.querySelectorAll('input[data-group-index]').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    const index = parseInt(checkbox.dataset.groupIndex);
+                    chart.data.datasets[index].hidden = !checkbox.checked;
+                    chart.update();
+                });
+            });
+
+            // Individual Sensor Toggle
+            document.getElementById('toggleSensors').addEventListener('change', (e) => {
+                const showSensors = e.target.checked;
+                // Loop through datasets 4 to 19 (the individual sensors)
+                for (let i = 4; i < 20; i++) {
+                    chart.data.datasets[i].hidden = !showSensors;
+                }
+                chart.update();
+            });
+        }
+    </script>
+</body>
+</html>

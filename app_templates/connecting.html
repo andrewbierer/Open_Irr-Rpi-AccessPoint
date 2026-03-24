@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <img src="usda_ars_logo.jpg" alt="USDA Logo" class="header-logo">
+            <h1>Open_Irr System WIFI Access Point Interface</h1>
+        </div>
+         <form action="/savechanges" method="POST" autocomplete="off" autocapitalize="none">
+            <fieldset>
+                <legend>Connecting to {ssid}...</legend>
+                <h4>Please Navigate to IP Address: {current_ip}...</h4>
+            <!-- Navigation Buttons -->
+        <nav>
+            <a href="index.html" class="button">Home</a>
+            <a href="dashboard.html" class="button">Dashboard</a>
+            <a href="options.html" class="button">System Programming</a>
+            <a href="filesAccess.html" class="button">File Access</a>
+        </nav>
+        </form>
+    </div>
+    <script>
+        function closeEventPopup() {
+            document.getElementById('eventPopup').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

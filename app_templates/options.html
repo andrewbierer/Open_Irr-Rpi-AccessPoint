@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open_Irr System Programming</title>
+    <!-- Styling based on your provided template -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <img src="usda_ars_logo.jpg" alt="USDA Logo" class="header-logo">
+            <h1>Open_Irr System Programming</h1>
+        </div>
+        <p>Welcome to the Open_Irr System Programmer. Please configure your irrigation settings below.</p>
+        <form id="openIrrForm">
+            <!-- Section: Set Measurement Interval -->
+            <fieldset class="section-fieldset">
+                <legend>Set Measurement Interval</legend>
+                <div class="form-group">
+                    <label>Select a default interval or specify a custom one:</label>
+                    <div class="radio-group">
+                        <input type="radio" id="interval15" name="measurementInterval" value="15" checked>
+                        <label for="interval15">15 Minutes</label>
+                        <input type="radio" id="interval30" name="measurementInterval" value="30">
+                        <label for="interval30">30 Minutes</label>
+                        <input type="radio" id="interval60" name="measurementInterval" value="60">
+                        <label for="interval60">60 Minutes</label>
+                        <input type="radio" id="intervalCustomRadio" name="measurementInterval" value="custom">
+                        <label for="intervalCustomRadio">Custom (minutes):</label>
+                        <input type="number" id="intervalCustomInput" name="customInterval" min="1" max="1440" placeholder="e.g., 45" disabled>
+                        <p class="hint">Enter a value between 1 and 1440 minutes (24 hours).</p>
+                    </div>
+                </div>
+            </fieldset>
+            <!-- Section: Water Manager (Autonomous Irrigation) -->
+            <fieldset class="section-fieldset">
+                <legend>Water Manager (Autonomous Irrigation)</legend>
+                <div class="form-group">
+                    <label>Enable or disable autonomous irrigation:</label>
+                    <div class="radio-group">
+                        <input type="radio" id="waterManagerOn" name="waterManager" value="on" checked>
+                        <label for="waterManagerOn">ON</label>
+                        <input type="radio" id="waterManagerOff" name="waterManager" value="off">
+                        <label for="waterManagerOff">OFF</label>
+                    </div>
+                </div>
+            </fieldset>
+            <!-- Section: Irrigation Group Settings -->
+            <fieldset class="section-fieldset">
+                <legend>Irrigation Group Settings</legend>
+                <div id="irrigationGroupsContainer"></div>
+            </fieldset>
+            <!-- Section: Apply Settings -->
+             <fieldset class="section-fieldset">
+                <legend>Apply Settings</legend>
+                <p class="hint">Click the button below to apply your settings to the system. Changes will be saved and applied immediately.</p>
+                <input type="text" id="filename" name="filename" placeholder="Enter filename">
+                <button type="submit" class="button">Apply Settings</button>
+            </fieldset>
+            <!-- Navigation Buttons -->
+        <nav>
+            <a href="index.html" class="button">Home</a>
+            <a href="dashboard.html" class="button">Dashboard</a>
+            <a href="options.html" class="button">System Programming</a>
+            <a href="filesAccess.html" class="button">File Access</a>
+        </nav>
+        </form>
+
+        <!-- --- NEW --- Real-time JSON Output Section -->
+        <fieldset class="section-fieldset">
+            <legend>Real-Time JSON Output</legend>
+            <pre id="jsonOutput">Form data will appear here in real-time...</pre>
+        </fieldset>
+        <!-- End of new section -->
+
+    </div>
+    <!-- Event details popup (one for the whole page) -->
+    <div id="eventPopup" class="event-popup hidden">
+        <div id="eventPopupBackdrop" class="popup-backdrop" onclick="closeEventPopup()"></div>
+        <div style="position: relative; z-index: 1;">
+            <h3>Event Details</h3>
+            <p id="eventPopupDetails"></p>
+            <button type="button" class="button-danger" id="eventPopupRemoveBtn">Remove Event</button>
+            <button type="button" class="button-secondary" onclick="closeEventPopup()">Close</button>
+        </div>
+    </div>
+    <script>
+        // Data store for schedules
+        const schedules = {
+            group1: [], group2: [], group3: [], group4: []
+        };
+
+        // --- Core Form Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('openIrrForm'); // --- NEW --- Get form reference
+            const groupsContainer = document.getElementById('irrigationGroupsContainer');
+            if (groupsContainer) {
+                for (let i = 1; i <= 4; i++) {
+                    groupsContainer.insertAdjacentHTML('beforeend', generateGroupHTML(i));
+                }
+            }
+            document.querySelectorAll('input[name="measurementInterval"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const customInput = document.getElementById('intervalCustomInput');
+                    customInput.disabled = (this.value !== 'custom');
+                    if (this.value === 'custom') customInput.focus();
+                    else customInput.value = '';
+                });
+            });
+            document.querySelectorAll('select[onchange]').forEach(select => {
+                select.dispatchEvent(new Event('change'));
+            });
+            document.querySelectorAll('input[type="radio"][onchange]').forEach(radio => {
+                 if(radio.checked) radio.dispatchEvent(new Event('change'));
+            });
+            for (let i = 1; i <= 4; i++) {
+                generateScheduleGrid(`group${i}`);
+            }
+
+            // --- NEW --- Real-time JSON update logic
+            function updateJsonDisplay() {
+                const jsonData = generateJsonFromForm();
+                document.getElementById('jsonOutput').textContent = JSON.stringify(jsonData, null, 2);
+            }
+
+            // Listen for any input change on the form to trigger a JSON update
+            form.addEventListener('input', updateJsonDisplay);
+            
+            // Also need to update when schedule changes, as it's not a standard form input
+            // We'll wrap the original schedule functions to add this trigger
+            const originalAddScheduleEvent = window.addScheduleEvent;
+            window.addScheduleEvent = function(...args) {
+                originalAddScheduleEvent(...args);
+                updateJsonDisplay();
+            };
+            const originalClearSchedule = window.clearSchedule;
+            window.clearSchedule = function(...args) {
+                originalClearSchedule(...args);
+                updateJsonDisplay();
+            };
+            const originalRemoveEvent = handleCellClick; // A bit tricky, need to wrap the remove part
+            window.handleCellClick = function(cell, groupId) {
+                 if (!cell.classList.contains('has-event')) return;
+                 const eventIds = JSON.parse(cell.dataset.eventIds);
+                 const eventId = eventIds[0];
+                 const event = schedules[groupId].find(e => e.id === eventId);
+                 if (!event) return;
+                 const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+                 document.getElementById('eventPopupDetails').innerHTML = `<strong>Day:</strong> ${daysOfWeek[event.day]}<br><strong>Time:</strong> ${event.startTime} - ${event.endTime}<br><strong>Type:</strong> ${capitalizeFirstLetter(event.type)}`;
+                 document.getElementById('eventPopupRemoveBtn').onclick = () => {
+                     schedules[groupId] = schedules[groupId].filter(e => e.id !== event.id);
+                     renderSchedule(groupId);
+                     closeEventPopup();
+                     updateJsonDisplay(); // The important addition
+                 };
+                 document.getElementById('eventPopup').classList.remove('hidden');
+            }
+
+            // Initial call to display JSON on page load
+            updateJsonDisplay();
+        });
+
+        // --- JSON Synthesis Logic ---
+        function generateJsonFromForm() {
+            const form = document.getElementById('openIrrForm');
+            const data = {
+                settings: {},
+                irrigationGroups: []
+            };
+
+            // 1. Get global settings
+            const intervalRadio = form.querySelector('input[name="measurementInterval"]:checked');
+            if (intervalRadio.value === 'custom') {
+                data.settings.measurementIntervalMinutes = parseInt(form.querySelector('#intervalCustomInput').value) || null;
+            } else {
+                data.settings.measurementIntervalMinutes = parseInt(intervalRadio.value);
+            }
+            data.settings.waterManager = form.querySelector('input[name="waterManager"]:checked').value;
+
+            // 2. Get settings for each irrigation group
+            for (let i = 1; i <= 4; i++) {
+                const groupId = `group${i}`;
+                const groupData = {
+                    groupNumber: i,
+                    method: form.querySelector(`#${groupId}Method`).value,
+                    methodOptions: {},
+                    sensors: {
+                        type: form.querySelector(`#${groupId}Sensors`).value,
+                        wiredSensorIds: []
+                    },
+                    valve: {}
+                };
+
+                // Method-specific options
+                switch (groupData.method) {
+                    case 'thresholdWater':
+                        const twType = form.querySelector(`input[name="${groupId}ThreshType"]:checked`).value;
+                        groupData.methodOptions.thresholdType = twType;
+                        groupData.methodOptions.thresholdValue = twType === 'kpa' ?
+                            parseFloat(form.querySelector(`#${groupId}ThreshKpa`).value) :
+                            parseFloat(form.querySelector(`#${groupId}ThreshVwc`).value);
+                        groupData.methodOptions.eventDurationMinutes = parseInt(form.querySelector(`#${groupId}EventDuration`).value) || null;
+                        break;
+                    case 'thresholdMaintenance':
+                        const tmType = form.querySelector(`input[name="${groupId}ThreshMaintType"]:checked`).value;
+                        groupData.methodOptions.thresholdType = tmType;
+                        groupData.methodOptions.thresholdValue = tmType === 'kpa' ?
+                            parseFloat(form.querySelector(`#${groupId}ThreshMaintKpa`).value) :
+                            parseFloat(form.querySelector(`#${groupId}ThreshMaintVwc`).value);
+                        break;
+                    case 'maximumDepletion':
+                        groupData.methodOptions.fieldCapacityVwc = parseFloat(form.querySelector(`#${groupId}FieldCapacity`).value) || null;
+                        groupData.methodOptions.residualWaterVwc = parseFloat(form.querySelector(`#${groupId}ResidualWater`).value) || null;
+                        groupData.methodOptions.saturatedWaterVwc = parseFloat(form.querySelector(`#${groupId}SaturatedWater`).value) || null;
+                        groupData.methodOptions.depletionAllowedPaw = parseFloat(form.querySelector(`#${groupId}DepletionAllowed`).value) || null;
+                        break;
+                    case 'scheduled':
+                        // This data comes from our JS object, not a form input
+                        groupData.methodOptions.events = schedules[groupId].map(({id, ...rest}) => rest); // copy events, removing temp id
+                        break;
+                }
+
+                // Sensor options
+                if (groupData.sensors.type === 'wired') {
+                    form.querySelectorAll(`input[name="${groupId}WiredSensors[]"]:checked`).forEach(cb => {
+                        groupData.sensors.wiredSensorIds.push(parseInt(cb.value));
+                    });
+                }
+
+                // Valve options
+                const valveType = form.querySelector(`#${groupId}ValveType`).value;
+                groupData.valve.type = valveType;
+                if (valveType === 'ac' || valveType === 'dc') {
+                    groupData.valve.configuration = form.querySelector(`input[name="${groupId}Configuration"]:checked`).value;
+                    groupData.valve.returnToStateOnPowerLoss = form.querySelector(`input[name="${groupId}ReturnToState"]:checked`).value === 'true';
+                }
+                if (valveType === 'dc') {
+                    groupData.valve.isLatching = form.querySelector(`input[name="${groupId}Latching"]:checked`).value === 'true';
+                }
+                
+                data.irrigationGroups.push(groupData);
+            }
+            return data;
+        }
+
+        // --- (The rest of your existing JavaScript functions remain here) ---
+
+        // Function to generate the HTML for a single irrigation group
+        function generateGroupHTML(i) {
+            return `
+            <fieldset class="group-fieldset">
+                <legend>Irrigation Group ${i}</legend>
+                <div class="form-group">
+                    <label for="group${i}Method">Method:</label>
+                    <select id="group${i}Method" name="group${i}Method" onchange="handleMethodChange(this)">
+                        <option value="">-- Select a Method --</option>
+                        <option value="thresholdWater" title="Threshold water management is a management strategy that triggers an irrigation event only when soil moisture drops below a pre-defined sensor threshold. This technique focuses on soil dryness and would be fixed based on local soil type. The irrigation event triggered by crossing the threshold is customized.">Threshold Water Management</option>
+                        <option value="thresholdMaintenance" title="Threshold maintenance management is a management strategy that attempts to maintain soil moisture at a pre-defined sensor threshold through small but frequent irrigation events. This technique focuses on stabilizing the hydraulic gradient between plants and the local soil.">Threshold Maintenance Management</option>
+                        <option value="maximumDepletion" title="Maximum allowable depletion is a management strategy that references a point, expressed as a percentage of plant available water, where a particular plant is known to experience physiological stresses and potential yield losses. Crossing this point results in irrigating to refill the available soil profile. This technique focuses on crop stress manifestation.">Maximum Allowable Depletion</option>
+                        <option value="scheduled" title="Standard irrigation scheduling through pre-defined singular events and events that recur weekly.">Scheduled Irrigation</option>
+                    </select>
+                    <p class="method-explanation" id="group${i}MethodExplanation"></p>
+                </div>
+                <div id="group${i}MethodOptions" class="method-specific-options">
+                    <div id="group${i}ThresholdWaterOptions" class="hidden">
+                        <div class="form-group">
+                            <label>Threshold Definition:</label>
+                            <div class="radio-group">
+                                <input type="radio" id="group${i}ThreshTypeKpa" name="group${i}ThreshType" value="kpa" onchange="toggleThresholdInput('group${i}', 'water')" checked> <label for="group${i}ThreshTypeKpa">Threshold in (-KPa)</label>
+                                <input type="radio" id="group${i}ThreshTypeVwc" name="group${i}ThreshType" value="vwc" onchange="toggleThresholdInput('group${i}', 'water')"> <label for="group${i}ThreshTypeVwc">Threshold in (VWC)</label>
+                            </div>
+                            <div id="group${i}ThreshKpaInputDiv" class="form-group">
+                                <label for="group${i}ThreshKpa">Threshold Value (-KPa):</label>
+                                <input type="number" id="group${i}ThreshKpa" name="group${i}ThreshKpa" min="-240" max="-5" placeholder="e.g., -80">
+                                <p class="hint">Enter a value between -240 and -5.</p>
+                            </div>
+                            <div id="group${i}ThreshVwcInputDiv" class="form-group hidden">
+                                <label for="group${i}ThreshVwc">Threshold Value (VWC %):</label>
+                                <input type="number" id="group${i}ThreshVwc" name="group${i}ThreshVwc" min="10" max="60" placeholder="e.g., 25">
+                                <p class="hint">Enter a percentage between 10 and 60.</p>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="group${i}EventDuration">Irrigation Event Duration (Minutes):</label>
+                            <input type="number" id="group${i}EventDuration" name="group${i}EventDuration" min="1" max="1440">
+                            <p class="hint">Enter a value between 1 and 1440.</p>
+                        </div>
+                    </div>
+                    <div id="group${i}ThresholdMaintenanceOptions" class="hidden">
+                        <div class="form-group">
+                            <label>Threshold Definition:</label>
+                            <div class="radio-group">
+                                <input type="radio" id="group${i}ThreshMaintTypeKpa" name="group${i}ThreshMaintType" value="kpa" onchange="toggleThresholdInput('group${i}', 'maint')" checked> <label for="group${i}ThreshMaintTypeKpa">Threshold in (-KPa)</label>
+                                <input type="radio" id="group${i}ThreshMaintTypeVwc" name="group${i}ThreshMaintType" value="vwc" onchange="toggleThresholdInput('group${i}', 'maint')"> <label for="group${i}ThreshMaintTypeVwc">Threshold in (VWC)</label>
+                            </div>
+                            <div id="group${i}ThreshMaintKpaInputDiv" class="form-group">
+                                <label for="group${i}ThreshMaintKpa">Threshold Value (-KPa):</label>
+                                <input type="number" id="group${i}ThreshMaintKpa" name="group${i}ThreshMaintKpa" min="-240" max="-5" placeholder="e.g., -40">
+                                <p class="hint">Enter a value between -240 and -5.</p>
+                            </div>
+                            <div id="group${i}ThreshMaintVwcInputDiv" class="form-group hidden">
+                                <label for="group${i}ThreshMaintVwc">Threshold Value (VWC %):</label>
+                                <input type="number" id="group${i}ThreshMaintVwc" name="group${i}ThreshMaintVwc" min="10" max="60" placeholder="e.g., 35">
+                                <p class="hint">Enter a percentage between 10 and 60.</p>
+                            </div>
+                        </div>
+                        <p class="note">Irrigation event duration is not customizable using this method.</p>
+                    </div>
+                    <div id="group${i}MaximumDepletionOptions" class="hidden">
+                        <p class="note">This method is highly reliant on known soil properties.</p>
+                        <div class="form-group"><label for="group${i}FieldCapacity">Field Capacity (VWC %):</label><input type="number" id="group${i}FieldCapacity" name="group${i}FieldCapacity" min="10" max="60" placeholder="e.g., 45"><p class="hint">Enter a value between 10 and 60.</p></div>
+                        <div class="form-group"><label for="group${i}ResidualWater">Residual Water Content (VWC %):</label><input type="number" id="group${i}ResidualWater" name="group${i}ResidualWater" min="1" max="30" placeholder="e.g., 8"><p class="hint">Enter a value between 1 and 30.</p></div>
+                        <div class="form-group"><label for="group${i}SaturatedWater">Saturated Water Content (VWC %):</label><input type="number" id="group${i}SaturatedWater" name="group${i}SaturatedWater" min="10" max="60" placeholder="e.g., 55"><p class="hint">Enter a value between 10 and 60.</p></div>
+                        <div class="form-group"><label for="group${i}DepletionAllowed">Depletion Allowed (PAW %):</label><input type="number" id="group${i}DepletionAllowed" name="group${i}DepletionAllowed" min="10" max="90" placeholder="e.g., 50"><p class="hint">Enter a value between 10 and 90.</p></div>
+                    </div>
+                    <div id="group${i}ScheduledOptions" class="hidden">
+                        <div class="schedule-container">
+                            <div class="schedule-actions">
+                                <button type="button" onclick="toggleAddEventForm('group${i}', 'singular')">Add Singular Event</button>
+                                <button type="button" onclick="toggleAddEventForm('group${i}', 'recurring')">Add Recurring Event</button>
+                                <button type="button" class="button-danger" onclick="clearSchedule('group${i}')">Clear All Events</button>
+                            </div>
+                            <div id="group${i}AddEventForm" class="add-event-form hidden">
+                                <h4 id="group${i}AddEventTitle"></h4><input type="hidden" id="group${i}EventType">
+                                <div class="form-group"><label for="group${i}EventDay">Day:</label><select id="group${i}EventDay"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select></div>
+                                <div class="form-group"><label for="group${i}StartTime">Start Time:</label><input type="time" id="group${i}StartTime" step="900"></div>
+                                <div class="form-group"><label for="group${i}EndTime">End Time:</label><input type="time" id="group${i}EndTime" step="900"></div>
+                                <button type="button" onclick="addScheduleEvent('group${i}')">Add to Schedule</button>
+                                <button type="button" class="button-secondary" onclick="toggleAddEventForm('group${i}', null)">Cancel</button>
+                            </div>
+                            <div id="group${i}ScheduleGridContainer"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group"><label for="group${i}Sensors">Sensors:</label><select id="group${i}Sensors" name="group${i}Sensors" onchange="toggleWiredSensors('group${i}')"><option value="">-- Select Sensors --</option><option value="wired">Wired Sensors</option></select><div id="group${i}WiredSensors" class="wired-sensor-checkboxes hidden"><label>Select Wired Sensors (1-16):</label><div class="checkbox-grid">${[...Array(16).keys()].map(j => `<input type="checkbox" id="group${i}Sensor${j+1}" name="group${i}WiredSensors[]" value="${j+1}"><label for="group${i}Sensor${j+1}">${j+1}</label>`).join('')}</div></div></div>
+                <div class="form-group"><label for="group${i}ValveType">Valve Type:</label><select id="group${i}ValveType" name="group${i}ValveType" onchange="updateExplanation(this); toggleValveOptions('group${i}');"><option value="">-- Select a Valve Type --</option><option value="ac" title="AC valves require continuous power...">Alternating Current (AC)</option><option value="dc" title="DC valves may be latching or non-latching...">Direct Current (DC)</option></select><p class="method-explanation" id="group${i}ValveTypeExplanation"></p></div>
+                <div id="group${i}ValveOptions" class="hidden"><div class="form-group"><label>Configuration:</label><div class="radio-group"><input type="radio" id="group${i}ConfigNC" name="group${i}Configuration" value="normallyClosed" checked> <label for="group${i}ConfigNC">Normally Closed</label><span class="hint-inline">The valve is closed without power.</span><br><input type="radio" id="group${i}ConfigNO" name="group${i}Configuration" value="normallyOpen"> <label for="group${i}ConfigNO">Normally Open</label><span class="hint-inline">The valve is open without power.</span></div></div><div class="form-group"><label>Return to State Upon Power Loss:</label><div class="radio-group"><input type="radio" id="group${i}ReturnFalse" name="group${i}ReturnToState" value="false" checked> <label for="group${i}ReturnFalse">False</label><span class="hint-inline">Valve will fail-closed.</span><br><input type="radio" id="group${i}ReturnTrue" name="group${i}ReturnToState" value="true"> <label for="group${i}ReturnTrue">True</label><span class="hint-inline">Valve remembers its last state.</span></div></div><div id="group${i}DCValveOptions" class="hidden"><div class="form-group"><label>Latching Valve?</label><div class="radio-group"><input type="radio" id="group${i}LatchingTrue" name="group${i}Latching" value="true"> <label for="group${i}LatchingTrue">True</label><input type="radio" id="group${i}LatchingFalse" name="group${i}Latching" value="false" checked> <label for="group${i}LatchingFalse">False</label></div></div></div></div>
+            </fieldset>
+            `;
+        }
+        
+        function updateExplanation(selectElement) {
+            const selectedOption = selectElement.options[selectElement.selectedIndex];
+            const explanationParagraph = document.getElementById(selectElement.id + 'Explanation');
+            if (explanationParagraph) {
+                explanationParagraph.style.display = (selectedOption && selectedOption.title && selectedOption.value) ? 'block' : 'none';
+                explanationParagraph.textContent = (selectedOption && selectedOption.title) ? selectedOption.title : '';
+            }
+        }
+        function toggleWiredSensors(groupId) {
+            const sensorSelect = document.getElementById(`${groupId}Sensors`);
+            const wiredSensorsDiv = document.getElementById(`${groupId}WiredSensors`);
+            wiredSensorsDiv.classList.toggle('hidden', sensorSelect.value !== 'wired');
+            if (sensorSelect.value !== 'wired') {
+                wiredSensorsDiv.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+            }
+        }
+        
+        function toggleValveOptions(groupId) {
+            const valveTypeSelect = document.getElementById(`${groupId}ValveType`);
+            const valveOptionsDiv = document.getElementById(`${groupId}ValveOptions`);
+            const dcOptionsDiv = document.getElementById(`${groupId}DCValveOptions`);
+            const selectedType = valveTypeSelect.value;
+            valveOptionsDiv.classList.toggle('hidden', !['ac', 'dc'].includes(selectedType));
+            dcOptionsDiv.classList.toggle('hidden', selectedType !== 'dc');
+        }
+        function handleMethodChange(selectElement) {
+            updateExplanation(selectElement);
+            const groupId = selectElement.id.replace('Method', '');
+            const selectedMethod = selectElement.value;
+            document.querySelectorAll(`#${groupId}MethodOptions > div`).forEach(div => div.classList.add('hidden'));
+            if (selectedMethod) {
+                const optionsDiv = document.getElementById(`${groupId}${capitalizeFirstLetter(selectedMethod)}Options`);
+                if (optionsDiv) {
+                    optionsDiv.classList.remove('hidden');
+                    const defaultRadio = optionsDiv.querySelector('input[type="radio"][checked]');
+                    if(defaultRadio) defaultRadio.dispatchEvent(new Event('change'));
+                }
+            }
+        }
+        function capitalizeFirstLetter(string) {
+            return string.charAt(0).toUpperCase() + string.slice(1);
+        }
+        
+        function toggleThresholdInput(groupId, methodType) {
+            const prefix = (methodType === 'water') ? 'Thresh' : 'ThreshMaint';
+            const kpaRadio = document.getElementById(`${groupId}${prefix}TypeKpa`);
+            document.getElementById(`${groupId}${prefix}KpaInputDiv`).classList.toggle('hidden', !kpaRadio.checked);
+            document.getElementById(`${groupId}${prefix}VwcInputDiv`).classList.toggle('hidden', kpaRadio.checked);
+        }
+        // --- Scheduled Irrigation Logic ---
+        function generateScheduleGrid(groupId) {
+            const container = document.getElementById(`${groupId}ScheduleGridContainer`);
+            if (!container) return;
+            const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            let tableHTML = '<table class="schedule-grid"><thead><tr><th>Time</th>';
+            days.forEach(day => tableHTML += `<th>${day}</th>`);
+            tableHTML += '</tr></thead><tbody>';
+            for (let hour = 0; hour < 24; hour++) {
+                const timeStr = hour.toString().padStart(2, '0') + ':00';
+                tableHTML += `<tr><td class="hour-label">${timeStr}</td>`;
+                for (let day = 1; day <= 7; day++) {
+                    const dayIndex = (day % 7);
+                    tableHTML += `<td data-hour="${hour}" data-day="${dayIndex}" onclick="handleCellClick(this, '${groupId}')"></td>`;
+                }
+                tableHTML += '</tr>';
+            }
+            tableHTML += '</tbody></table>';
+            container.innerHTML = tableHTML;
+        }
+        function toggleAddEventForm(groupId, type) {
+            const formDiv = document.getElementById(`${groupId}AddEventForm`);
+            if (!type || !formDiv.classList.contains('hidden')) {
+                formDiv.classList.add('hidden');
+                return;
+            }
+            document.getElementById(`${groupId}AddEventTitle`).textContent = `Add ${capitalizeFirstLetter(type)} Event`;
+            document.getElementById(`${groupId}EventType`).value = type;
+            formDiv.classList.remove('hidden');
+        }
+        function addScheduleEvent(groupId) {
+            const day = document.getElementById(`${groupId}EventDay`).value;
+            const startTime = document.getElementById(`${groupId}StartTime`).value;
+            const endTime = document.getElementById(`${groupId}EndTime`).value;
+            const type = document.getElementById(`${groupId}EventType`).value;
+            if (!startTime || !endTime) { alert('Please select both a start and end time.'); return; }
+            if (startTime >= endTime) { alert('End time must be after start time.'); return; }
+            const newEvent = { day: parseInt(day), startTime, endTime, type, id: Date.now() };
+            schedules[groupId].push(newEvent);
+            renderSchedule(groupId);
+            toggleAddEventForm(groupId, null);
+        }
+        
+        function renderSchedule(groupId) {
+            const gridCells = document.querySelectorAll(`#${groupId}ScheduleGridContainer td[data-hour]`);
+            gridCells.forEach(cell => {
+                cell.className = ''; 
+                cell.removeAttribute('data-event-ids');
+            });
+            schedules[groupId].forEach((event) => {
+                const startHour = parseInt(event.startTime.split(':')[0]);
+                const endHour = parseInt(event.endTime.split(':')[0]);
+                const eventClass = event.type === 'singular' ? 'singular-event' : 'recurring-event';
+                for (let hour = startHour; hour < endHour; hour++) {
+                    const cell = document.querySelector(`#${groupId}ScheduleGridContainer td[data-hour='${hour}'][data-day='${event.day}']`);
+                    if (cell) {
+                        cell.classList.add(eventClass, 'has-event');
+                        let ids = cell.dataset.eventIds ? JSON.parse(cell.dataset.eventIds) : [];
+                        if (!ids.includes(event.id)) ids.push(event.id);
+                        cell.dataset.eventIds = JSON.stringify(ids);
+                    }
+                }
+            });
+        }
+        
+        function clearSchedule(groupId) {
+            if (confirm(`Are you sure you want to clear all events for ${groupId.replace('g','G')}?`)) {
+                schedules[groupId] = [];
+                renderSchedule(groupId);
+            }
+        }
+        
+        function closeEventPopup() {
+            document.getElementById('eventPopup').classList.add('hidden');
+        }
+
+// This sends the JSON data to the Pico W server to be saved.
+document.getElementById('openIrrForm').addEventListener('submit', function(event) {
+    // Prevent the default form submission behavior.
+    event.preventDefault(); 
+
+    // --- 1. Generate the JSON data and get the desired filename ---
+    const finalJsonData = generateJsonFromForm();
+    const filename = document.getElementById('filename').value.trim();
+
+    // We will bundle the filename and the settings data together to send to the Pico.
+    const payload = {
+        filename: filename, // The Pico will use this. If empty, the Pico should create a default name.
+        data: finalJsonData // This is the JSON object from generateJsonFromForm().
+    };
+
+    // --- 2. Send the data to the Pico W server ---
+    // We use the fetch() API to send a POST request.
+    // The '/settings' is a custom endpoint you will create on your Pico server.
+    fetch('/settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json', // Let the server know we're sending JSON.
+        },
+        body: JSON.stringify(payload), // Convert the JavaScript object to a JSON string.
+    })
+    .then(response => {
+        // Check if the server responded with a success status (e.g., 200 OK).
+        if (response.ok) {
+            return response.text(); // Or response.json() if your Pico sends back JSON.
+        }
+        // If the server responded with an error, throw an error to be caught below.
+        throw new Error('Server responded with an error: ' + response.status);
+    })
+    .then(data => {
+        // Success! The Pico has received and processed the data.
+        console.log('Server response:', data);
+        alert('Settings successfully sent to the device and saved!');
+    })
+    .catch(error => {
+        // An error occurred during the fetch operation (e.g., network issue or server error).
+        console.error('Error sending settings:', error);
+        alert('Failed to save settings to the device. Please check the connection and try again.');
+    });
+});
+    </script>
+</body>
+</html>

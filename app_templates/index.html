@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Change Settings</title>
+    <!-- Styling based on your provided template -->
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header-container">
+            <img src="usda_ars_logo.jpg" alt="USDA Logo" class="header-logo">
+            <h1>Open_Irr System WIFI Access Point Interface</h1>
+        </div>
+         <p>Welcome to the Open_Irr System wifi access point Homepage. Configure web connections or select from the options below.</p>
+         <form action="/savechanges" method="POST" autocomplete="off" autocapitalize="none">
+            <fieldset>
+                <legend>Configure WIFI Settings</legend>
+                <p class="hint">Note: A WiFi connection is not required for operation.</p>
+        <form action="/configure" method="POST" autocomplete="off" autocapitalize="none">
+            <label for="ssid">SSID:</label>
+            <input type="text" id="ssid" name="ssid"><br>
+            <label for="password">Password:</label>
+            <input type="text" id="password" name="password"><br>
+            <button>Save</button><br><br>
+        </form>
+                <div class="form-group">
+                    <label for="databaseServer">Database Server Webaddress:</label>
+                    <p class="hint">Datafiles may be transferred to a remote server.</p>
+                    <input type="text" id="databaseServer" name="databaseServer" value=" ">
+                </div>
+                <div class="form-group">
+                    <label for="timeSyncServer">Time Synchronization Server Webaddress:</label>
+                    <p class="hint">Poll a time synchronization server to synchronize the hardware clock.</p>
+                    <input type="text" id="timeSyncServer" name="timeSyncServer" value=" ">
+                </div>
+            </fieldset>
+            <!-- Navigation Buttons -->
+        <nav>
+            <a href="index.html" class="button">Home</a>
+            <a href="dashboard.html" class="button">Dashboard</a>
+            <a href="options.html" class="button">System Programming</a>
+            <a href="filesAccess.html" class="button">File Access</a>
+        </nav>
+        </form>
+    </div>
+    <script>
+        function closeEventPopup() {
+            document.getElementById('eventPopup').classList.add('hidden');
+        }
+
+    </script>
+</body>
+</html>
